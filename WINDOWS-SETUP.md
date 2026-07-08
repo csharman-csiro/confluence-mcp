@@ -10,8 +10,8 @@ at the bottom.
 
 ## 1. Get the two things you need
 
-1. **`confluence-mcp-win-x64.exe`** — get this from whoever set up
-   Confluence access for your team (IT, or the repo maintainer).
+1. **`confluence-mcp-win-x64.exe`** — download it from the
+   [latest release](https://github.com/csharman-csiro/confluence-mcp/releases/latest/download/confluence-mcp-win-x64.exe).
 2. **A Confluence Personal Access Token (PAT)**:
    1. In Confluence, click your profile picture → **Settings** → **Personal
       Access Tokens**

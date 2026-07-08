@@ -11,12 +11,11 @@ at the bottom.
 
 ## 1. Get the two things you need
 
-1. **The confluence-mcp binary** — get this from whoever set up Confluence
-   access for your team (IT, or the repo maintainer). There are two
-   versions; you need the one matching your Mac's chip:
-   - `confluence-mcp-macos-arm64` — Apple Silicon Macs (M1/M2/M3/M4).
+1. **The confluence-mcp binary** — download the one matching your Mac's
+   chip from the latest release:
+   - [`confluence-mcp-macos-arm64`](https://github.com/csharman-csiro/confluence-mcp/releases/latest/download/confluence-mcp-macos-arm64) — Apple Silicon Macs (M1/M2/M3/M4).
      This is almost every Mac sold since late 2020.
-   - `confluence-mcp-macos-x64` — older Intel Macs.
+   - [`confluence-mcp-macos-x64`](https://github.com/csharman-csiro/confluence-mcp/releases/latest/download/confluence-mcp-macos-x64) — older Intel Macs.
 
    Not sure which you have? Click the Apple menu (top-left) → **About
    This Mac**. If it says **Chip: Apple M...**, use the `arm64` file. If

@@ -1,6 +1,5 @@
 export interface ConfluenceConfig {
   baseUrl: string;
-  username: string;
   apiToken: string;
   allowedSpaces: string[];
   debug?: boolean;
@@ -63,21 +62,29 @@ export interface SearchResult {
 }
 
 export interface CreatePageRequest {
-  spaceId: string;
-  status: string;
+  type: string;
   title: string;
-  body: {
-    representation: string;
-    value: string;
+  space: {
+    key: string;
   };
-  parentId?: string;
+  body: {
+    storage: {
+      value: string;
+      representation: string;
+    };
+  };
+  ancestors?: Array<{
+    id: string;
+  }>;
 }
 
 export interface UpdatePageRequest {
   id: string;
-  status: string;
-  title: string;
   type: string;
+  title: string;
+  space: {
+    key: string;
+  };
   version: {
     number: number;
   };
@@ -86,17 +93,6 @@ export interface UpdatePageRequest {
       value: string;
       representation: string;
     };
-  };
-}
-
-export interface MovePageRequest {
-  version: {
-    number: number;
-  };
-  title: string;
-  type: string;
-  space: {
-    key: string;
   };
   ancestors?: Array<{
     id: string;

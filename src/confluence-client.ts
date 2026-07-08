@@ -1,12 +1,11 @@
 import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import { 
-  ConfluenceConfig, 
-  ConfluencePage, 
-  ConfluenceSpace, 
+import {
+  ConfluenceConfig,
+  ConfluencePage,
+  ConfluenceSpace,
   SearchResult,
   CreatePageRequest,
   UpdatePageRequest,
-  MovePageRequest,
   PaginatedResult
 } from './types.js';
 import { validateSpaceAccess } from './config.js';
@@ -27,13 +26,13 @@ export class ConfluenceClient {
   constructor(config: ConfluenceConfig) {
     this.config = config;
     this.logger = new Logger();
-    
-    const auth = Buffer.from(`${config.username}:${config.apiToken}`).toString('base64');
-    
+
+    // Confluence Server/Data Center: v1 REST API at /rest/api, authenticated
+    // with a Bearer Personal Access Token (not the Basic-auth API tokens used by Cloud).
     this.client = axios.create({
-      baseURL: `${config.baseUrl}/wiki/api/v2`,
+      baseURL: `${config.baseUrl}/rest/api`,
       headers: {
-        'Authorization': `Basic ${auth}`,
+        'Authorization': `Bearer ${config.apiToken}`,
         'Accept': 'application/json',
         'Content-Type': 'application/json'
       },
@@ -44,7 +43,7 @@ export class ConfluenceClient {
     this.client.interceptors.request.use(async (request: RequestWithMetadata) => {
       const startTime = Date.now();
       request.metadata = { startTime };
-      
+
       await this.logger.logRequest(
         request.method || 'unknown',
         request.url || '',
@@ -65,8 +64,8 @@ export class ConfluenceClient {
     this.client.interceptors.response.use(
       async (response) => {
         const requestConfig = response.config as RequestWithMetadata;
-        const duration = requestConfig.metadata?.startTime 
-          ? Date.now() - requestConfig.metadata.startTime 
+        const duration = requestConfig.metadata?.startTime
+          ? Date.now() - requestConfig.metadata.startTime
           : undefined;
 
         await this.logger.logResponse(
@@ -105,41 +104,38 @@ export class ConfluenceClient {
   }
 
   async searchContent(
-    query?: string, 
-    spaceKey?: string, 
-    limit = 25, 
+    query?: string,
+    spaceKey?: string,
+    limit = 25,
     title?: string,
     start = 0,
     bodyFormat?: string
   ): Promise<SearchResult> {
-    // V2 API doesn't have a direct search endpoint, so we use v1 for CQL search
-    // This is the recommended approach as CQL search is only available in v1
-    
     // Build search conditions
     const searchConditions: string[] = [];
-    
+
     if (query) {
       searchConditions.push(`text ~ "${query}"`);
     }
-    
+
     if (title) {
       searchConditions.push(`title ~ "${title}"`);
     }
-    
+
     // If neither query nor title provided, search for all content
     if (searchConditions.length === 0) {
       searchConditions.push('type = page');
     }
-    
+
     const searchQuery = searchConditions.join(' AND ');
-    
+
     // Set expand based on bodyFormat parameter
     let expandParam = 'version,space';
     if (bodyFormat) {
       const format = bodyFormat === 'view' ? 'body.view' : 'body.storage';
       expandParam += `,${format}`;
     }
-    
+
     const params: any = {
       cql: searchQuery,
       limit,
@@ -157,19 +153,9 @@ export class ConfluenceClient {
       params.cql = `(${allowedSpacesCql}) AND ${params.cql}`;
     }
 
-    // Use v1 API for search since v2 doesn't provide CQL search functionality
-    const searchUrl = `${this.config.baseUrl}/wiki/rest/api/search`;
-    const auth = Buffer.from(`${this.config.username}:${this.config.apiToken}`).toString('base64');
-    const response: AxiosResponse<{ results: ConfluencePage[], start: number, limit: number, size: number, _links: any }> = await axios.get(searchUrl, {
-      params,
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
-    });
-    
+    const response: AxiosResponse<{ results: ConfluencePage[], start: number, limit: number, size: number, _links: any }> =
+      await this.client.get('/search', { params });
+
     return {
       content: response.data.results,
       start: response.data.start,
@@ -180,92 +166,79 @@ export class ConfluenceClient {
   }
 
   async getPage(pageId: string, bodyFormat?: string): Promise<ConfluencePage> {
-    // Use v1 API for getPage since we need space information anyway
     let expandParam = 'space,version';
     if (bodyFormat) {
       const format = bodyFormat === 'view' ? 'body.view' : 'body.storage';
       expandParam += `,${format}`;
     }
-    
-    const v1Url = `${this.config.baseUrl}/wiki/rest/api/content/${pageId}?expand=${expandParam}`;
-    const auth = Buffer.from(`${this.config.username}:${this.config.apiToken}`).toString('base64');
-    
-    const response = await axios.get(v1Url, {
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
+
+    const response: AxiosResponse<ConfluencePage> = await this.client.get(`/content/${pageId}`, {
+      params: { expand: expandParam }
     });
-    
+
     // Validate space access
     if (!response.data.space || !response.data.space.key) {
       throw new Error('Unable to determine page space for access validation');
     }
-    
+
     if (!validateSpaceAccess(response.data.space.key, this.config.allowedSpaces)) {
       throw new Error(`Access denied to space: ${response.data.space.key}`);
     }
-    
+
     return response.data;
   }
 
   async createPage(
-    spaceKey: string, 
-    title: string, 
-    content: string, 
+    spaceKey: string,
+    title: string,
+    content: string,
     parentId?: string
   ): Promise<ConfluencePage> {
     if (!validateSpaceAccess(spaceKey, this.config.allowedSpaces)) {
       throw new Error(`Access denied to space: ${spaceKey}`);
     }
 
-    // Get space details to obtain the space ID
-    const space = await this.getSpaceByKey(spaceKey);
-    if (!space.id) {
-      throw new Error(`Unable to get space ID for space: ${spaceKey}`);
-    }
-
     const pageData: CreatePageRequest = {
-      spaceId: space.id,
-      status: 'current',
+      type: 'page',
       title,
+      space: { key: spaceKey },
       body: {
-        representation: 'storage',
-        value: content
+        storage: {
+          value: content,
+          representation: 'storage'
+        }
       }
     };
 
     if (parentId) {
-      pageData.parentId = parentId;
+      pageData.ancestors = [{ id: parentId }];
     }
 
-    const response: AxiosResponse<ConfluencePage> = await this.client.post('/pages', pageData);
+    const response: AxiosResponse<ConfluencePage> = await this.client.post('/content', pageData);
     return response.data;
   }
 
   async updatePage(
-    pageId: string, 
-    title: string, 
-    content: string, 
+    pageId: string,
+    title: string,
+    content: string,
     version: number
   ): Promise<ConfluencePage> {
     const currentPage = await this.getPage(pageId);
-    
+
     if (!currentPage.space || !currentPage.space.key) {
       throw new Error('Unable to determine page space for access validation');
     }
-    
+
     if (!validateSpaceAccess(currentPage.space.key, this.config.allowedSpaces)) {
       throw new Error(`Access denied to space: ${currentPage.space.key}`);
     }
 
     const updateData: UpdatePageRequest = {
       id: pageId,
-      status: 'current',
-      title,
       type: 'page',
+      title,
+      space: { key: currentPage.space.key },
       version: { number: version },
       body: {
         storage: {
@@ -275,41 +248,36 @@ export class ConfluenceClient {
       }
     };
 
-    const response: AxiosResponse<ConfluencePage> = await this.client.put(`/pages/${pageId}`, updateData);
+    const response: AxiosResponse<ConfluencePage> = await this.client.put(`/content/${pageId}`, updateData);
     return response.data;
   }
 
   async deletePage(pageId: string): Promise<void> {
     const currentPage = await this.getPage(pageId);
-    
+
     if (!currentPage.space || !currentPage.space.key) {
       throw new Error('Unable to determine page space for access validation');
     }
-    
+
     if (!validateSpaceAccess(currentPage.space.key, this.config.allowedSpaces)) {
       throw new Error(`Access denied to space: ${currentPage.space.key}`);
     }
 
-    await this.client.delete(`/pages/${pageId}`);
+    await this.client.delete(`/content/${pageId}`);
   }
 
-  async listSpaces(limit = 50, cursor?: string): Promise<PaginatedResult<ConfluenceSpace>> {
-    const params: any = { limit };
-    if (cursor) {
-      params.cursor = cursor;
-    }
-    
-    const response: AxiosResponse<PaginatedResult<ConfluenceSpace>> = await this.client.get('/spaces', {
-      params
+  async listSpaces(limit = 50, start = 0): Promise<PaginatedResult<ConfluenceSpace>> {
+    const response: AxiosResponse<PaginatedResult<ConfluenceSpace>> = await this.client.get('/space', {
+      params: { limit, start }
     });
-    
-    const filteredResults = response.data.results.filter(space => 
+
+    const filteredResults = response.data.results.filter(space =>
       validateSpaceAccess(space.key, this.config.allowedSpaces)
     );
-    
+
     // Cache the spaces
     filteredResults.forEach(space => this.cacheSpace(space));
-    
+
     return {
       ...response.data,
       results: filteredResults,
@@ -324,20 +292,28 @@ export class ConfluenceClient {
         return space;
       }
     }
-    
-    // Note: Since we only have access to space keys in configuration, we need to validate by key
-    // This method is primarily for internal use after we've obtained a space ID
-    const response: AxiosResponse<ConfluenceSpace> = await this.client.get(`/spaces/${spaceId}`);
-    
-    // Validate access after getting the space data
-    if (!validateSpaceAccess(response.data.key, this.config.allowedSpaces)) {
-      throw new Error(`Access denied to space: ${response.data.key}`);
+
+    // The v1 space API only supports lookup by key, so page through the
+    // allowed spaces (same access-controlled listSpaces used elsewhere) to find it.
+    let start = 0;
+    const limit = 100;
+    let space: ConfluenceSpace | undefined;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const spaces = await this.listSpaces(limit, start);
+      space = spaces.results.find(s => s.id === spaceId);
+      if (space || spaces.results.length < limit) {
+        break;
+      }
+      start += limit;
     }
-    
-    // Cache the space
-    this.cacheSpace(response.data);
-    
-    return response.data;
+
+    if (!space) {
+      throw new Error(`Space not found: ${spaceId}`);
+    }
+
+    return space;
   }
 
   private isSpaceCacheValid(spaceKey: string): boolean {
@@ -364,33 +340,10 @@ export class ConfluenceClient {
       }
     }
 
-    // Search through all pages using cursor-based pagination
-    let cursor: string | undefined;
-    let found = false;
-    let space: ConfluenceSpace | undefined;
-    
-    do {
-      const spaces = await this.listSpaces(100, cursor);
-      space = spaces.results.find(s => s.key === spaceKey);
-      
-      if (space) {
-        found = true;
-        break;
-      }
-      
-      // Extract cursor from _links.next if available
-      cursor = undefined;
-      if (spaces._links?.next) {
-        const nextUrl = new URL(spaces._links.next);
-        cursor = nextUrl.searchParams.get('cursor') || undefined;
-      }
-    } while (cursor);
-    
-    if (!found || !space) {
-      throw new Error(`Space not found: ${spaceKey}`);
-    }
-    
-    return space;
+    const response: AxiosResponse<ConfluenceSpace> = await this.client.get(`/space/${spaceKey}`);
+    this.cacheSpace(response.data);
+
+    return response.data;
   }
 
   async getSpaceContent(spaceKey: string, limit = 25, start = 0, bodyFormat?: string): Promise<PaginatedResult<ConfluencePage>> {
@@ -398,48 +351,22 @@ export class ConfluenceClient {
       throw new Error(`Access denied to space: ${spaceKey}`);
     }
 
-    // Get basic page list from v2 API
-    const response: AxiosResponse<PaginatedResult<ConfluencePage>> = await this.client.get('/pages', {
+    let expandParam = 'version,space';
+    if (bodyFormat) {
+      const format = bodyFormat === 'view' ? 'body.view' : 'body.storage';
+      expandParam += `,${format}`;
+    }
+
+    const response: AxiosResponse<PaginatedResult<ConfluencePage>> = await this.client.get('/content', {
       params: {
-        'space-key': spaceKey,
+        spaceKey,
+        type: 'page',
         limit,
-        start
+        start,
+        expand: expandParam
       }
     });
-    
-    // If body content is requested, enhance each page with body content from v1 API
-    if (bodyFormat && response.data.results.length > 0) {
-      const format = bodyFormat === 'view' ? 'body.view' : 'body.storage';
-      const auth = Buffer.from(`${this.config.username}:${this.config.apiToken}`).toString('base64');
-      
-      const enhancedResults = await Promise.all(
-        response.data.results.map(async (page) => {
-          try {
-            const v1Url = `${this.config.baseUrl}/wiki/rest/api/content/${page.id}?expand=${format},version,space`;
-            const v1Response = await axios.get(v1Url, {
-              headers: {
-                'Authorization': `Basic ${auth}`,
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-              },
-              timeout: 30000
-            });
-            
-            if (v1Response.data.body) {
-              page.body = v1Response.data.body;
-            }
-          } catch (error) {
-            if (this.config.debug) {
-              console.warn(`Failed to retrieve body content for page ${page.id}:`, error);
-            }
-          }
-          return page;
-        })
-      );
-      
-      response.data.results = enhancedResults;
-    }
-    
+
     return response.data;
   }
 
@@ -449,86 +376,62 @@ export class ConfluenceClient {
     parentId?: string
   ): Promise<ConfluencePage> {
     const currentPage = await this.getPage(pageId);
-    
+
     if (!currentPage.space || !currentPage.space.key) {
       throw new Error('Unable to determine page space for access validation');
     }
-    
+
     if (!validateSpaceAccess(currentPage.space.key, this.config.allowedSpaces)) {
       throw new Error(`Access denied to source space: ${currentPage.space.key}`);
     }
-    
+
     if (!validateSpaceAccess(targetSpaceKey, this.config.allowedSpaces)) {
       throw new Error(`Access denied to target space: ${targetSpaceKey}`);
     }
 
-    const moveData: MovePageRequest = {
-      version: { number: currentPage.version.number },
-      title: currentPage.title,
+    const moveData: UpdatePageRequest = {
+      id: pageId,
       type: 'page',
-      space: { key: targetSpaceKey }
+      title: currentPage.title,
+      space: { key: targetSpaceKey },
+      version: { number: currentPage.version.number },
+      body: {
+        storage: {
+          value: currentPage.body?.storage?.value ?? '',
+          representation: 'storage'
+        }
+      }
     };
 
     if (parentId) {
       moveData.ancestors = [{ id: parentId }];
     }
 
-    const response: AxiosResponse<ConfluencePage> = await this.client.put(`/pages/${pageId}`, moveData);
+    const response: AxiosResponse<ConfluencePage> = await this.client.put(`/content/${pageId}`, moveData);
     return response.data;
   }
 
   async getPageChildren(pageId: string, limit = 25, start = 0, bodyFormat?: string): Promise<PaginatedResult<ConfluencePage>> {
     const parentPage = await this.getPage(pageId);
-    
+
     if (!parentPage.space || !parentPage.space.key) {
       throw new Error('Unable to determine page space for access validation');
     }
-    
+
     if (!validateSpaceAccess(parentPage.space.key, this.config.allowedSpaces)) {
       throw new Error(`Access denied to space: ${parentPage.space.key}`);
     }
 
-    // Get basic children list from v2 API
-    const response: AxiosResponse<PaginatedResult<ConfluencePage>> = await this.client.get(`/pages/${pageId}/children`, {
-      params: {
-        limit,
-        start
-      }
-    });
-    
-    // If body content is requested, enhance each page with body content from v1 API
-    if (bodyFormat && response.data.results.length > 0) {
+    let expandParam = 'version,space';
+    if (bodyFormat) {
       const format = bodyFormat === 'view' ? 'body.view' : 'body.storage';
-      const auth = Buffer.from(`${this.config.username}:${this.config.apiToken}`).toString('base64');
-      
-      const enhancedResults = await Promise.all(
-        response.data.results.map(async (page) => {
-          try {
-            const v1Url = `${this.config.baseUrl}/wiki/rest/api/content/${page.id}?expand=${format},version,space`;
-            const v1Response = await axios.get(v1Url, {
-              headers: {
-                'Authorization': `Basic ${auth}`,
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-              },
-              timeout: 30000
-            });
-            
-            if (v1Response.data.body) {
-              page.body = v1Response.data.body;
-            }
-          } catch (error) {
-            if (this.config.debug) {
-              console.warn(`Failed to retrieve body content for page ${page.id}:`, error);
-            }
-          }
-          return page;
-        })
-      );
-      
-      response.data.results = enhancedResults;
+      expandParam += `,${format}`;
     }
-    
+
+    const response: AxiosResponse<PaginatedResult<ConfluencePage>> = await this.client.get(`/content/${pageId}/child/page`, {
+      params: { limit, start, expand: expandParam }
+    });
+
     return response.data;
   }
 }

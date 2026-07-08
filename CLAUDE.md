@@ -1,11 +1,11 @@
 CLAUDE.md - Confluence MCP Service
 
 #Overview
-This MCP (Model Context Protocol) service enables Claude to interact with Atlassian Confluence through its REST API. The service provides secure, configurable access to Confluence spaces with proper authentication and space-based access control.
+This MCP (Model Context Protocol) service enables Claude to interact with a Confluence Server/Data Center instance through its v1 REST API. The service provides secure, configurable access to Confluence spaces with proper authentication and space-based access control.
 
 #Features
 
-- Secure Authentication: Uses Atlassian API tokens for secure access
+- Secure Authentication: Uses a Data Center Personal Access Token (Bearer auth) for secure access
 - Space Restrictions: Configurable allowed spaces list for security
 - Full CRUD Operations: Create, read, update, and delete pages
 - Content Search: Search across allowed spaces
@@ -27,9 +27,8 @@ This MCP (Model Context Protocol) service enables Claude to interact with Atlass
    ```
    
 3. **Edit `.env` with your Confluence credentials:**
-   - `CONFLUENCE_BASE_URL`: Your Atlassian domain (e.g., https://yourcompany.atlassian.net)
-   - `CONFLUENCE_USERNAME`: Your Atlassian account email
-   - `CONFLUENCE_API_TOKEN`: Generate from https://id.atlassian.com/manage-profile/security/api-tokens
+   - `CONFLUENCE_BASE_URL`: Your Confluence Server/Data Center base URL, including any reverse-proxy context path (e.g., https://confluence.your-internal-domain.com)
+   - `CONFLUENCE_API_TOKEN`: A Personal Access Token generated from Profile picture -> Settings -> Personal Access Tokens
    - `ALLOWED_SPACES`: Comma-separated list of space keys to allow access to
 
 4. **Build the server:**
@@ -54,9 +53,8 @@ When prompted, paste the following JSON configuration:
   "command": "node",
   "args": ["/Users/scotto/Documents/javascript/confluence_mcp/dist/index.js"],
   "env": {
-    "CONFLUENCE_BASE_URL": "https://your-domain.atlassian.net",
-    "CONFLUENCE_USERNAME": "your-email@domain.com",
-    "CONFLUENCE_API_TOKEN": "your-api-token",
+    "CONFLUENCE_BASE_URL": "https://confluence.your-internal-domain.com",
+    "CONFLUENCE_API_TOKEN": "your-personal-access-token",
     "ALLOWED_SPACES": "SPACE1,SPACE2,SPACE3"
   }
 }
@@ -73,9 +71,8 @@ Alternatively, you can manually add the MCP server to your Claude Code configura
       "command": "node",
       "args": ["/Users/scotto/Documents/javascript/confluence_mcp/dist/index.js"],
       "env": {
-        "CONFLUENCE_BASE_URL": "https://your-domain.atlassian.net",
-        "CONFLUENCE_USERNAME": "your-email@domain.com",
-        "CONFLUENCE_API_TOKEN": "your-api-token",
+        "CONFLUENCE_BASE_URL": "https://confluence.your-internal-domain.com",
+        "CONFLUENCE_API_TOKEN": "your-personal-access-token",
         "ALLOWED_SPACES": "SPACE1,SPACE2,SPACE3"
       }
     }
@@ -97,17 +94,15 @@ Try asking Claude: "Search for pages in Confluence" or "List my Confluence space
 ## Environment Variables
 Create a .env file in the root directory:
 env
-CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
-CONFLUENCE_USERNAME=your-email@domain.com
-CONFLUENCE_API_TOKEN=your-api-token
+CONFLUENCE_BASE_URL=https://confluence.your-internal-domain.com
+CONFLUENCE_API_TOKEN=your-personal-access-token
 ALLOWED_SPACES=SPACE1,SPACE2,SPACE3
 
-## Getting an API Token
+## Getting a Personal Access Token
 
-- Go to Atlassian Account Settings
-- Click "Create API token"
-- Give it a descriptive label
-- Copy the generated token (save it securely!)
+- In Confluence, go to your profile picture -> Settings -> Personal Access Tokens
+- Click "Create token" and give it a descriptive label
+- Scope it to the spaces you need and copy the generated token (save it securely!)
 
 # Available Tools
 1. search_confluence
@@ -183,7 +178,7 @@ spaceKey (string): Space key
 Example:
 CopyGet information about the DEV space
 
-Note: The Confluence REST API v2 does not support expand parameters for spaces. If you need additional space-related data, use separate API calls with the returned space information.
+Note: get_space_by_key fetches the space directly from the v1 `/rest/api/space/{key}` endpoint; get_space_by_id resolves against the cached/paginated space list since v1 does not support lookup by numeric ID.
 
 8. get_space_content
 Get pages from a specific space.
@@ -219,7 +214,7 @@ Copy"List all pages in the PROJ space and show me their titles and last modified
 
 # Security Considerations
 
-API Token Security: Store API tokens securely and never commit them to version control
+PAT Security: Store Personal Access Tokens securely and never commit them to version control
 Space Restrictions: Always configure ALLOWED_SPACES to limit access to appropriate spaces
 Permissions: The service respects Confluence permissions - you can only access content your account can see
 Rate Limiting: The service includes basic rate limiting to avoid API throttling
@@ -229,8 +224,8 @@ Rate Limiting: The service includes basic rate limiting to avoid API throttling
 
 ### Authentication Failed
 
-Verify your username and API token
-Ensure the API token hasn't expired
+Verify your Personal Access Token is correct
+Ensure the token hasn't expired or been revoked
 Check that your account has access to Confluence
 
 
@@ -263,7 +258,7 @@ bashCopynpm test
 bashCopynpm run build
 
 # API Reference
-This service implements the MCP protocol and communicates with the Confluence REST API v2. For detailed API documentation, see:
+This service implements the MCP protocol and communicates with the Confluence Server/Data Center v1 REST API (`/rest/api`). For detailed API documentation, see:
 
 # MCP Protocol Specification
 Confluence REST API Documentation

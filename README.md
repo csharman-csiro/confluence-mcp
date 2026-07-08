@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server that provides secure access to Atlassian Confluence through its REST API.
 
+> **Setting this up for Claude Desktop and not a developer?** No Node.js
+> or build tools needed — just a downloaded binary and a config file edit:
+> [Windows guide](./WINDOWS-SETUP.md) · [macOS guide](./MACOS-SETUP.md)
+
 ## Using with Claude Code
 
 To use this MCP server with Claude Code, add it to your MCP configuration file:
@@ -25,9 +29,8 @@ When prompted, paste the following JSON configuration:
   "command": "node",
   "args": ["/path/to/confluence_mcp/dist/index.js"],
   "env": {
-    "CONFLUENCE_BASE_URL": "https://your-domain.atlassian.net",
-    "CONFLUENCE_USERNAME": "your-email@domain.com",
-    "CONFLUENCE_API_TOKEN": "your-api-token",
+    "CONFLUENCE_BASE_URL": "https://confluence.your-internal-domain.com",
+    "CONFLUENCE_API_TOKEN": "your-personal-access-token",
     "ALLOWED_SPACES": "SPACE1,SPACE2,SPACE3"
   }
 }
@@ -44,9 +47,8 @@ Alternatively, you can manually edit your MCP configuration file (`~/.config/cla
       "command": "node",
       "args": ["/path/to/confluence_mcp/dist/index.js"],
       "env": {
-        "CONFLUENCE_BASE_URL": "https://your-domain.atlassian.net",
-        "CONFLUENCE_USERNAME": "your-email@domain.com",
-        "CONFLUENCE_API_TOKEN": "your-api-token",
+        "CONFLUENCE_BASE_URL": "https://confluence.your-internal-domain.com",
+        "CONFLUENCE_API_TOKEN": "your-personal-access-token",
         "ALLOWED_SPACES": "SPACE1,SPACE2,SPACE3"
       }
     }
@@ -63,9 +65,8 @@ For development or if you prefer running TypeScript directly:
   "command": "npx",
   "args": ["tsx", "/path/to/confluence_mcp/src/index.ts"],
   "env": {
-    "CONFLUENCE_BASE_URL": "https://your-domain.atlassian.net",
-    "CONFLUENCE_USERNAME": "your-email@domain.com",
-    "CONFLUENCE_API_TOKEN": "your-api-token",
+    "CONFLUENCE_BASE_URL": "https://confluence.your-internal-domain.com",
+    "CONFLUENCE_API_TOKEN": "your-personal-access-token",
     "ALLOWED_SPACES": "SPACE1,SPACE2,SPACE3"
   }
 }
@@ -112,19 +113,28 @@ Once configured, you can use commands like:
 Create a `.env` file with your Confluence credentials:
 
 ```env
-CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
-CONFLUENCE_USERNAME=your-email@domain.com
-CONFLUENCE_API_TOKEN=your-api-token
+CONFLUENCE_BASE_URL=https://confluence.your-internal-domain.com
+CONFLUENCE_API_TOKEN=your-personal-access-token
 ALLOWED_SPACES=SPACE1,SPACE2,SPACE3
 DEBUG=false
 ```
 
-### Getting an API Token
+This server targets Confluence **Server / Data Center** (the `/rest/api` v1
+REST API with Bearer Personal Access Token auth), not Confluence Cloud.
 
-1. Go to [Atlassian Account Settings](https://id.atlassian.com/manage-profile/security/api-tokens)
-2. Click "Create API token"
-3. Give it a descriptive label
-4. Copy the generated token (save it securely!)
+- **CONFLUENCE_BASE_URL** must include any reverse-proxy context path your
+  instance sits behind (e.g. `https://confluence.internal.example.com/confluence`),
+  and should point at your load balancer URL if the instance is clustered.
+- If your instance uses an internally-issued TLS certificate, make sure
+  Node trusts that CA (e.g. via `NODE_EXTRA_CA_CERTS`), or requests will fail
+  with TLS errors.
+
+### Getting a Personal Access Token
+
+1. In Confluence, go to your profile picture -> **Settings** -> **Personal Access Tokens**
+2. Click **Create token**, give it a descriptive label, and scope it to the spaces you need
+3. Copy the generated token (save it securely — treat it like any other credential,
+   e.g. via an environment variable or secrets manager rather than committing it)
 
 ## Available Tools
 
@@ -132,13 +142,16 @@ DEBUG=false
 - **get_page** - Retrieve a specific page by ID
 - **create_page** - Create a new page
 - **update_page** - Update an existing page
-- **delete_page** - Delete a page
+- **move_page** - Move a page to a different space or parent
 - **list_spaces** - List accessible spaces
+- **get_space_by_id** - Get space details by space ID
+- **get_space_by_key** - Get space details by space key
 - **get_space_content** - Get pages from a specific space
+- **get_page_children** - Get child pages of a specific page
 
 ## Security Features
 
-- **API Token Authentication** - Secure access using Atlassian API tokens
+- **PAT Authentication** - Secure access using a Data Center Personal Access Token
 - **Space Restrictions** - Configurable allowed spaces list
 - **Permission Validation** - Respects Confluence permissions
 - **Request Validation** - Input validation and sanitization
@@ -157,4 +170,9 @@ npm test
 
 # Build
 npm run build
+
+# Package standalone binaries that bundle the Node.js runtime, so end users
+# don't need Node installed — see WINDOWS-SETUP.md / MACOS-SETUP.md
+npm run package:win   # -> release/confluence-mcp-win-x64.exe
+npm run package:mac   # -> release/confluence-mcp-macos-{x64,arm64}
 ```

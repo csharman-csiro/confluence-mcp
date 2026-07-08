@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-bundle/
+release/
 .env
 *.log
 .DS_Store

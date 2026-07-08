@@ -10,7 +10,10 @@
     "start": "node dist/index.js",
     "test": "jest",
     "lint": "eslint src --ext .ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist-bundle/confluence-mcp.cjs",
+    "package:win": "npm run bundle && pkg dist-bundle/confluence-mcp.cjs --targets node22-win-x64 --output release/confluence-mcp-win-x64.exe",
+    "package:mac": "npm run bundle && pkg dist-bundle/confluence-mcp.cjs --targets node22-macos-x64,node22-macos-arm64 --output release/confluence-mcp-macos"
   },
   "keywords": [
     "mcp",
@@ -29,6 +32,8 @@
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@yao-pkg/pkg": "^6.21.0",
+    "esbuild": "^0.28.1",
     "eslint": "^8.0.0",
     "jest": "^29.0.0",
     "tsx": "^4.0.0",
